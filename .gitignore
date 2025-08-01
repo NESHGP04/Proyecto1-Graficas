@@ -1,25 +1,67 @@
-# Archivos y carpetas generadas por Cargo
+# ====================================
+# Cargo / Rust build files
+# ====================================
 /target/
+Cargo.lock
 **/*.rs.bk
+**/*.rs~
+**/*.d
+**/*.timestamp
 
-# Archivos temporales del editor
+# ====================================
+# Editor / IDE
+# ====================================
+.DS_Store
+.idea/
+.vscode/
+*.code-workspace
+*.iml
 *.swp
 *.swo
 *~
 *.tmp
 *.log
 
-# Archivos de configuración locales
-.DS_Store
-.idea/
-.vscode/
-*.iml
-
-# Archivos creados por SDL2 o builds
+# ====================================
+# SDL2 / binarios compilados
+# ====================================
 *.dll
 *.so
 *.dylib
 *.exe
 
-# Archivos de compilación y cache
-Cargo.lock
+# ====================================
+# Archivos generados por el juego (no incluir assets originales)
+# ====================================
+# Ignora capturas automáticas o imágenes generadas en runtime
+/screenshots/
+/captures/
+*.bmp
+*.tga
+
+# ====================================
+# Rust Analyzer / herramientas
+# ====================================
+/rust-project.json
+*.json
+*.h
+*.timestamp
+*.cmake
+*lib
+*.rs
+*Makefile
+*.yaml
+*.c
+*.bin
+*.o
+*.rmeta
+*build
+*lib
+*dep-lib-bindgen
+*.d
+*.rlib
+*.so
+*.TAG
+*.CARGO-lock
+
+
