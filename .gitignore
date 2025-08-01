@@ -1,0 +1,25 @@
+# Archivos y carpetas generadas por Cargo
+/target/
+**/*.rs.bk
+
+# Archivos temporales del editor
+*.swp
+*.swo
+*~
+*.tmp
+*.log
+
+# Archivos de configuración locales
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Archivos creados por SDL2 o builds
+*.dll
+*.so
+*.dylib
+*.exe
+
+# Archivos de compilación y cache
+Cargo.lock
