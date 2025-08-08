@@ -1,36 +1,25 @@
+mod maze;
+mod player;
+mod caster;
+mod framebuffer;
+mod sprite;
+
+
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
+use sdl2::image::LoadTexture;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
-use sdl2::image::LoadTexture;
 use std::time::{Duration, Instant};
+use sprite::{Sprite, SpriteRenderer};
+
+use crate::maze::load_maze_from_file;
+use crate::player::Player;
+use crate::caster::render_scene;
+use crate::framebuffer::{draw_background, draw_minimap, draw_fps};
 
 const SCREEN_WIDTH: u32 = 800;
 const SCREEN_HEIGHT: u32 = 600;
-const MAP_WIDTH: usize = 12;
-const MAP_HEIGHT: usize = 12;
-const FOV: f64 = std::f64::consts::PI / 3.0;
-const MOVE_SPEED: f64 = 3.0;
-const ROT_SPEED: f64 = 2.0;
-
-const TEX_WIDTH: usize = 64;
-const TEX_HEIGHT: usize = 64;
-
-// 0 = vacío, 1-10 = paredes, 5 = álbum
-static mut MAP: [[i32; MAP_WIDTH]; MAP_HEIGHT] = [
-    [1,1,1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,1,0,0,0,0,0,5,1],
-    [1,0,1,0,2,0,1,1,1,0,3,1],
-    [1,0,1,0,0,0,0,0,4,0,0,1],
-    [1,0,1,1,5,6,1,0,7,1,0,1],
-    [1,0,0,0,0,0,8,0,0,9,0,1],
-    [1,1,1,1,1,0,1,1,0,1,0,1],
-    [1,0,0,0,1,0,0,0,0,1,0,1],
-    [1,0,1,0,1,1,1,1,0,1,0,1],
-    [1,0,1,0,0,0,0,1,0,0,0,1],
-    [1,0,0,0,1,0,0,0,0,1,0,1],
-    [1,1,1,1,1,1,1,1,1,1,1,1],
-];
 
 fn main() -> Result<(), String> {
     // SDL Init
@@ -58,8 +47,33 @@ fn main() -> Result<(), String> {
     let mut canvas = window.into_canvas().present_vsync().build().map_err(|e| e.to_string())?;
     let texture_creator = canvas.texture_creator();
 
+    //Sprite
+    let mut sprite_renderer = SpriteRenderer::new();
+    
+    // let album_texture = texture_creator.load_texture("../assets/sprites/album.webp")?;
+    // sprite_renderer.add_texture(album_texture);
+
+
+    // sprite_renderer.add_sprite(Sprite { x: 10.5, y: 1.5, texture_index: 0 }); // álbum en pared
+    // sprite_renderer.add_sprite(Sprite { x: 6.5, y: 5.5, texture_index: 1 });  // hs.png en camino
+    // Carga texturas
+    let album_texture = texture_creator.load_texture("../assets/sprites/album.webp")?;
+    sprite_renderer.add_texture(album_texture);
+
+    let hs_texture = texture_creator.load_texture("../assets/sprites/hs.png")?;
+    sprite_renderer.add_texture(hs_texture);
+
+    // Ahora puedes agregar sprites con texture_index 0 y 1 respectivamente:
+    sprite_renderer.add_sprite(Sprite { x: 10.5, y: 1.5, texture_index: 0 }); // álbum
+    sprite_renderer.add_sprite(Sprite { x: 5.0, y: 5.0, texture_index: 1 }); // hs
+
+
+
     // Fuente
     let font = ttf_context.load_font("/System/Library/Fonts/Supplemental/Arial.ttf", 24)?;
+
+    // Cargar laberinto desde archivo
+    load_maze_from_file("../maze.txt")?;
 
     // Álbum sprite
     let album_texture = texture_creator.load_texture("../assets/sprites/album.webp")?;
@@ -82,18 +96,23 @@ fn main() -> Result<(), String> {
     mouse_util.show_cursor(false);
 
     // Estado jugador
-    let mut pos_x: f64 = 1.5;
-    let mut pos_y: f64 = 1.5;
-    let mut dir_angle: f64 = 0.0;
+    let mut player = Player::new();
 
     let mut event_pump = sdl_context.event_pump()?;
     let mut last_time = Instant::now();
     let mut victoria = false;
 
+    //FOV
+    const FOV: f64 = std::f64::consts::PI / 3.0;
+
     'running: loop {
         let now = Instant::now();
         let delta_time = now.duration_since(last_time).as_secs_f64();
         last_time = now;
+
+        let plane_x = -player.dir_angle.sin() * (FOV / 2.0).tan();
+        let plane_y = player.dir_angle.cos() * (FOV / 2.0).tan();
+
 
         // Eventos
         for event in event_pump.poll_iter() {
@@ -110,37 +129,16 @@ fn main() -> Result<(), String> {
             .pressed_scancodes()
             .filter_map(Keycode::from_scancode)
             .collect();
+        player.update_position(&keys, delta_time);
 
-        let move_step = MOVE_SPEED * delta_time;
-        if keys.contains(&Keycode::W) {
-            let nx = pos_x + dir_angle.cos() * move_step;
-            let ny = pos_y + dir_angle.sin() * move_step;
-            unsafe {
-                if MAP[ny as usize][nx as usize] != 1 {
-                    pos_x = nx;
-                    pos_y = ny;
-                }
-            }
-        }
-        if keys.contains(&Keycode::S) {
-            let nx = pos_x - dir_angle.cos() * move_step;
-            let ny = pos_y - dir_angle.sin() * move_step;
-            unsafe {
-                if MAP[ny as usize][nx as usize] != 1 {
-                    pos_x = nx;
-                    pos_y = ny;
-                }
-            }
-        }
-
-        // Rotación mouse
+        // Rotación con el mouse
         let mouse_state = event_pump.relative_mouse_state();
-        dir_angle += (mouse_state.x() as f64) * 0.002;
+        player.rotate(mouse_state.x());
 
         // Comprobar victoria
         unsafe {
-            if MAP[pos_y as usize][pos_x as usize] == 5 {
-                MAP[pos_y as usize][pos_x as usize] = 0;
+            if maze::MAP[player.y as usize][player.x as usize] == 5 {
+                maze::MAP[player.y as usize][player.x as usize] = 0;
                 sdl2::mixer::Channel::all().play(&pickup_sound, 0)?;
                 victoria = true;
             }
@@ -154,104 +152,49 @@ fn main() -> Result<(), String> {
                 .blended(Color::RGB(255, 255, 255)).unwrap();
             let texture = texture_creator.create_texture_from_surface(&surface).unwrap();
             canvas.copy(&texture, None, Rect::new(200, 250, 400, 50)).unwrap();
+            
+            // sprite_renderer.draw_sprites(
+            //     &mut canvas,
+            //     player.x,
+            //     player.y,
+            //     player.dir_angle,
+            //     plane_x,
+            //     plane_y,
+            //     SCREEN_WIDTH,
+            //     SCREEN_HEIGHT,
+            // )?;
+            
             canvas.present();
             std::thread::sleep(Duration::from_secs(3));
             break 'running;
         }
 
         // Fondo
-        canvas.set_draw_color(Color::RGB(135, 206, 235));
-        canvas.fill_rect(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT / 2))?;
-        canvas.set_draw_color(Color::RGB(80, 80, 80));
-        canvas.fill_rect(Rect::new(0, (SCREEN_HEIGHT / 2) as i32, SCREEN_WIDTH, SCREEN_HEIGHT / 2))?;
+        draw_background(&mut canvas, SCREEN_WIDTH, SCREEN_HEIGHT)?;
 
-        // Raycasting con texturas
-        unsafe {
-            for x in 0..SCREEN_WIDTH {
-                let camera_x = 2.0 * x as f64 / SCREEN_WIDTH as f64 - 1.0;
-                let ray_angle = dir_angle + camera_x * FOV / 2.0;
-                let ray_dir_x = ray_angle.cos();
-                let ray_dir_y = ray_angle.sin();
+        // Raycasting
+        render_scene(&mut canvas, &player, &wall_textures, SCREEN_WIDTH, SCREEN_HEIGHT)?;
 
-                let mut distance = 0.0;
-                let mut wall_id = 0;
-                let mut hit_x = 0.0;
-                let mut hit_y = 0.0;
-
-                while distance < 20.0 {
-                    distance += 0.05;
-                    let tx = (pos_x + ray_dir_x * distance) as i32;
-                    let ty = (pos_y + ray_dir_y * distance) as i32;
-
-                    if tx < 0 || tx >= MAP_WIDTH as i32 || ty < 0 || ty >= MAP_HEIGHT as i32 {
-                        wall_id = 1;
-                        break;
-                    } else if MAP[ty as usize][tx as usize] > 0 && MAP[ty as usize][tx as usize] != 5 {
-                        wall_id = MAP[ty as usize][tx as usize];
-                        hit_x = pos_x + ray_dir_x * distance;
-                        hit_y = pos_y + ray_dir_y * distance;
-                        break;
-                    }
-                }
-
-                if wall_id > 0 {
-                    let wall_height = (SCREEN_HEIGHT as f64 / distance) as i32;
-                    let draw_start = -(wall_height / 2) + (SCREEN_HEIGHT as i32 / 2);
-                    let draw_end = (wall_height / 2) + (SCREEN_HEIGHT as i32 / 2);
-
-                    let wall_x = if (hit_x.floor() - hit_x).abs() < 0.0001 {
-                        hit_y - hit_y.floor()
-                    } else {
-                        hit_x - hit_x.floor()
-                    };
-
-                    let tex_x = (wall_x * TEX_WIDTH as f64) as i32;
-                    let texture = &wall_textures[(wall_id - 1) as usize];
-
-                    let src = Rect::new(tex_x, 0, 1, TEX_HEIGHT as u32);
-                    let dst = Rect::new(x as i32, draw_start, 1, (draw_end - draw_start) as u32);
-                    canvas.copy(texture, src, dst)?;
-                }
-            }
-        }
+        // Dibujar sprites
+        sprite_renderer.draw_sprites(
+            &mut canvas,
+            player.x,
+            player.y,
+            player.dir_angle,
+            plane_x,
+            plane_y,
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT,
+        )?;
 
         // Minimapa
-        let scale = 8;
-        unsafe {
-            for my in 0..MAP_HEIGHT {
-                for mx in 0..MAP_WIDTH {
-                    if MAP[my][mx] == 1 {
-                        canvas.set_draw_color(Color::RGB(200, 200, 200));
-                    } else if MAP[my][mx] == 5 {
-                        canvas.set_draw_color(Color::RGB(0, 255, 255));
-                    } else {
-                        canvas.set_draw_color(Color::RGB(50, 50, 50));
-                    }
-                    canvas.fill_rect(Rect::new(
-                        SCREEN_WIDTH as i32 - MAP_WIDTH as i32 * scale + mx as i32 * scale,
-                        my as i32 * scale,
-                        scale as u32,
-                        scale as u32,
-                    ))?;
-                }
-            }
-        }
-        canvas.set_draw_color(Color::RGB(255, 0, 0));
-        canvas.fill_rect(Rect::new(
-            SCREEN_WIDTH as i32 - MAP_WIDTH as i32 * scale + (pos_x as i32) * scale,
-            (pos_y as i32) * scale,
-            scale as u32,
-            scale as u32,
-        ))?;
+        draw_minimap(&mut canvas, &player, SCREEN_WIDTH)?;
 
         // FPS
         let fps = (1.0 / delta_time) as i32;
-        let surface = font.render(&format!("FPS: {}", fps))
-            .blended(Color::RGB(255, 255, 255))
-            .map_err(|e| e.to_string())?;
-        let texture = texture_creator.create_texture_from_surface(&surface).map_err(|e| e.to_string())?;
-        canvas.copy(&texture, None, Rect::new(10, 10, 100, 30))?;
+        draw_fps(&mut canvas, &font, &texture_creator, fps)?;
 
+        // Presentar frame
         canvas.present();
         std::thread::sleep(Duration::from_millis(16));
     }
