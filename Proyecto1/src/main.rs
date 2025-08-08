@@ -13,14 +13,17 @@ const FOV: f64 = std::f64::consts::PI / 3.0;
 const MOVE_SPEED: f64 = 3.0;
 const ROT_SPEED: f64 = 2.0;
 
-// 0 = vacío, 1-4 = paredes, 5 = álbum
+const TEX_WIDTH: usize = 64;
+const TEX_HEIGHT: usize = 64;
+
+// 0 = vacío, 1-10 = paredes, 5 = álbum
 static mut MAP: [[i32; MAP_WIDTH]; MAP_HEIGHT] = [
     [1,1,1,1,1,1,1,1,1,1,1,1],
     [1,0,0,0,1,0,0,0,0,0,5,1],
-    [1,0,1,0,1,0,1,1,1,0,1,1],
-    [1,0,1,0,0,0,0,0,1,0,0,1],
-    [1,0,1,1,1,1,1,0,1,1,0,1],
-    [1,0,0,0,0,0,1,0,0,1,0,1],
+    [1,0,1,0,2,0,1,1,1,0,3,1],
+    [1,0,1,0,0,0,0,0,4,0,0,1],
+    [1,0,1,1,5,6,1,0,7,1,0,1],
+    [1,0,0,0,0,0,8,0,0,9,0,1],
     [1,1,1,1,1,0,1,1,0,1,0,1],
     [1,0,0,0,1,0,0,0,0,1,0,1],
     [1,0,1,0,1,1,1,1,0,1,0,1],
@@ -28,16 +31,6 @@ static mut MAP: [[i32; MAP_WIDTH]; MAP_HEIGHT] = [
     [1,0,0,0,1,0,0,0,0,1,0,1],
     [1,1,1,1,1,1,1,1,1,1,1,1],
 ];
-
-fn wall_color(id: i32) -> Color {
-    match id {
-        1 => Color::RGB(255, 0, 0),
-        2 => Color::RGB(0, 255, 0),
-        3 => Color::RGB(0, 0, 255),
-        4 => Color::RGB(255, 255, 0),
-        _ => Color::RGB(200, 200, 200),
-    }
-}
 
 fn main() -> Result<(), String> {
     // SDL Init
@@ -75,6 +68,14 @@ fn main() -> Result<(), String> {
     let mut frame = 0;
     let mut frame_timer = 0.0;
 
+    // Texturas paredes
+    let mut wall_textures = Vec::new();
+    for i in 1..=10 {
+        let path = format!("../assets/tx/{}.png", i);
+        let texture = texture_creator.load_texture(path)?;
+        wall_textures.push(texture);
+    }
+
     // Mouse
     let mouse_util = sdl_context.mouse();
     mouse_util.set_relative_mouse_mode(true);
@@ -87,7 +88,6 @@ fn main() -> Result<(), String> {
 
     let mut event_pump = sdl_context.event_pump()?;
     let mut last_time = Instant::now();
-
     let mut victoria = false;
 
     'running: loop {
@@ -112,19 +112,20 @@ fn main() -> Result<(), String> {
             .collect();
 
         let move_step = MOVE_SPEED * delta_time;
-
-        unsafe {
-            if keys.contains(&Keycode::W) {
-                let nx = pos_x + dir_angle.cos() * move_step;
-                let ny = pos_y + dir_angle.sin() * move_step;
+        if keys.contains(&Keycode::W) {
+            let nx = pos_x + dir_angle.cos() * move_step;
+            let ny = pos_y + dir_angle.sin() * move_step;
+            unsafe {
                 if MAP[ny as usize][nx as usize] != 1 {
                     pos_x = nx;
                     pos_y = ny;
                 }
             }
-            if keys.contains(&Keycode::S) {
-                let nx = pos_x - dir_angle.cos() * move_step;
-                let ny = pos_y - dir_angle.sin() * move_step;
+        }
+        if keys.contains(&Keycode::S) {
+            let nx = pos_x - dir_angle.cos() * move_step;
+            let ny = pos_y - dir_angle.sin() * move_step;
+            unsafe {
                 if MAP[ny as usize][nx as usize] != 1 {
                     pos_x = nx;
                     pos_y = ny;
@@ -145,11 +146,12 @@ fn main() -> Result<(), String> {
             }
         }
 
-        // Pantalla de victoria
+        // Pantalla victoria
         if victoria {
             canvas.set_draw_color(Color::RGB(0, 0, 0));
             canvas.clear();
-            let surface = font.render("¡Has recuperado el álbum!").blended(Color::RGB(255, 255, 255)).unwrap();
+            let surface = font.render("¡Has recuperado el álbum!")
+                .blended(Color::RGB(255, 255, 255)).unwrap();
             let texture = texture_creator.create_texture_from_surface(&surface).unwrap();
             canvas.copy(&texture, None, Rect::new(200, 250, 400, 50)).unwrap();
             canvas.present();
@@ -158,12 +160,12 @@ fn main() -> Result<(), String> {
         }
 
         // Fondo
-        canvas.set_draw_color(Color::RGB(135, 206, 235)); // cielo
+        canvas.set_draw_color(Color::RGB(135, 206, 235));
         canvas.fill_rect(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT / 2))?;
-        canvas.set_draw_color(Color::RGB(80, 80, 80)); // suelo
+        canvas.set_draw_color(Color::RGB(80, 80, 80));
         canvas.fill_rect(Rect::new(0, (SCREEN_HEIGHT / 2) as i32, SCREEN_WIDTH, SCREEN_HEIGHT / 2))?;
 
-        // Raycasting
+        // Raycasting con texturas
         unsafe {
             for x in 0..SCREEN_WIDTH {
                 let camera_x = 2.0 * x as f64 / SCREEN_WIDTH as f64 - 1.0;
@@ -173,6 +175,9 @@ fn main() -> Result<(), String> {
 
                 let mut distance = 0.0;
                 let mut wall_id = 0;
+                let mut hit_x = 0.0;
+                let mut hit_y = 0.0;
+
                 while distance < 20.0 {
                     distance += 0.05;
                     let tx = (pos_x + ray_dir_x * distance) as i32;
@@ -183,40 +188,29 @@ fn main() -> Result<(), String> {
                         break;
                     } else if MAP[ty as usize][tx as usize] > 0 && MAP[ty as usize][tx as usize] != 5 {
                         wall_id = MAP[ty as usize][tx as usize];
+                        hit_x = pos_x + ray_dir_x * distance;
+                        hit_y = pos_y + ray_dir_y * distance;
                         break;
                     }
                 }
 
-                let wall_height = (SCREEN_HEIGHT as f64 / distance) as i32;
-                let draw_start = -(wall_height / 2) + (SCREEN_HEIGHT as i32 / 2);
-                let draw_end = (wall_height / 2) + (SCREEN_HEIGHT as i32 / 2);
+                if wall_id > 0 {
+                    let wall_height = (SCREEN_HEIGHT as f64 / distance) as i32;
+                    let draw_start = -(wall_height / 2) + (SCREEN_HEIGHT as i32 / 2);
+                    let draw_end = (wall_height / 2) + (SCREEN_HEIGHT as i32 / 2);
 
-                canvas.set_draw_color(wall_color(wall_id));
-                canvas.fill_rect(Rect::new(x as i32, draw_start, 1, (draw_end - draw_start) as u32))?;
-            }
+                    let wall_x = if (hit_x.floor() - hit_x).abs() < 0.0001 {
+                        hit_y - hit_y.floor()
+                    } else {
+                        hit_x - hit_x.floor()
+                    };
 
-            // Dibujar álbum (sprite)
-            for my in 0..MAP_HEIGHT {
-                for mx in 0..MAP_WIDTH {
-                    if MAP[my][mx] == 5 {
-                        let sprite_x = mx as f64 + 0.5 - pos_x;
-                        let sprite_y = my as f64 + 0.5 - pos_y;
-                        let inv_det = 1.0 / (dir_angle.cos() * 0.0 - 0.0 * dir_angle.sin());
-                        let transform_x = inv_det * (dir_angle.sin() * sprite_x - dir_angle.cos() * sprite_y);
-                        let transform_y = inv_det * (-0.0 * sprite_x + 0.0 * sprite_y);
-                        if transform_y > 0.0 {
-                            let sprite_screen_x = (SCREEN_WIDTH as f64 / 2.0) * (1.0 + transform_x / transform_y);
-                            let sprite_size = (SCREEN_HEIGHT as f64 / transform_y) as u32;
-                            let src = Rect::new(frame * frame_width, 0, frame_width as u32, frame_height as u32);
-                            let dst = Rect::new(
-                                (sprite_screen_x - sprite_size as f64 / 2.0) as i32,
-                                (SCREEN_HEIGHT as i32 / 2) - (sprite_size as i32 / 2),
-                                sprite_size,
-                                sprite_size,
-                            );
-                            canvas.copy(&album_texture, src, dst)?;
-                        }
-                    }
+                    let tex_x = (wall_x * TEX_WIDTH as f64) as i32;
+                    let texture = &wall_textures[(wall_id - 1) as usize];
+
+                    let src = Rect::new(tex_x, 0, 1, TEX_HEIGHT as u32);
+                    let dst = Rect::new(x as i32, draw_start, 1, (draw_end - draw_start) as u32);
+                    canvas.copy(texture, src, dst)?;
                 }
             }
         }
@@ -249,13 +243,6 @@ fn main() -> Result<(), String> {
             scale as u32,
             scale as u32,
         ))?;
-
-        // Animación álbum
-        frame_timer += delta_time;
-        if frame_timer >= 0.15 {
-            frame_timer = 0.0;
-            frame = (frame + 1) % 4;
-        }
 
         // FPS
         let fps = (1.0 / delta_time) as i32;
