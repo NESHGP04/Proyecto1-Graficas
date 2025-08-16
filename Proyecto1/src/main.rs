@@ -11,7 +11,7 @@ use sdl2::image::LoadTexture;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use std::time::{Duration, Instant};
-use sprite::{Sprite, SpriteRenderer};
+use sprite::{Sprite, SpriteRenderer, is_empty_cell};
 
 use crate::maze::load_maze_from_file;
 use crate::player::Player;
@@ -49,15 +49,9 @@ fn main() -> Result<(), String> {
 
     //Sprite
     let mut sprite_renderer = SpriteRenderer::new();
-    
-    // let album_texture = texture_creator.load_texture("../assets/sprites/album.webp")?;
-    // sprite_renderer.add_texture(album_texture);
 
-
-    // sprite_renderer.add_sprite(Sprite { x: 10.5, y: 1.5, texture_index: 0 }); // álbum en pared
-    // sprite_renderer.add_sprite(Sprite { x: 6.5, y: 5.5, texture_index: 1 });  // hs.png en camino
     // Carga texturas
-    let album_texture = texture_creator.load_texture("../assets/sprites/album.webp")?;
+    let album_texture = texture_creator.load_texture("../assets/sprites/album.png")?;
     sprite_renderer.add_texture(album_texture);
 
     let hs_texture = texture_creator.load_texture("../assets/sprites/hs.png")?;
@@ -65,9 +59,16 @@ fn main() -> Result<(), String> {
 
     // Ahora puedes agregar sprites con texture_index 0 y 1 respectivamente:
     sprite_renderer.add_sprite(Sprite { x: 10.5, y: 1.5, texture_index: 0 }); // álbum
-    sprite_renderer.add_sprite(Sprite { x: 5.0, y: 5.0, texture_index: 1 }); // hs
+    // hs.png (posición aleatoria en celda vacía)
+    loop {
+        let x = rand::random::<f64>() * (maze::MAP_WIDTH as f64);
+        let y = rand::random::<f64>() * (maze::MAP_HEIGHT as f64);
 
-
+        if is_empty_cell(x, y) {
+            sprite_renderer.add_sprite(Sprite { x, y, texture_index: 1 });
+            break;
+        }
+    }
 
     // Fuente
     let font = ttf_context.load_font("/System/Library/Fonts/Supplemental/Arial.ttf", 24)?;
@@ -76,7 +77,7 @@ fn main() -> Result<(), String> {
     load_maze_from_file("../maze.txt")?;
 
     // Álbum sprite
-    let album_texture = texture_creator.load_texture("../assets/sprites/album.webp")?;
+    let album_texture = texture_creator.load_texture("../assets/sprites/album.png")?;
     let frame_width = 32;
     let frame_height = 32;
     let mut frame = 0;
@@ -152,17 +153,6 @@ fn main() -> Result<(), String> {
                 .blended(Color::RGB(255, 255, 255)).unwrap();
             let texture = texture_creator.create_texture_from_surface(&surface).unwrap();
             canvas.copy(&texture, None, Rect::new(200, 250, 400, 50)).unwrap();
-            
-            // sprite_renderer.draw_sprites(
-            //     &mut canvas,
-            //     player.x,
-            //     player.y,
-            //     player.dir_angle,
-            //     plane_x,
-            //     plane_y,
-            //     SCREEN_WIDTH,
-            //     SCREEN_HEIGHT,
-            // )?;
             
             canvas.present();
             std::thread::sleep(Duration::from_secs(3));

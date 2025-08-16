@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 raylib = "5.5.1"
 sdl2 = { version = "0.35", features = ["ttf", "image", "mixer"] }
+rand = "0.8"
