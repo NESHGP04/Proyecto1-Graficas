@@ -4,7 +4,6 @@ mod caster;
 mod framebuffer;
 mod sprite;
 
-
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::image::LoadTexture;
@@ -29,6 +28,7 @@ fn main() -> Result<(), String> {
     let _image_context = sdl2::image::init(sdl2::image::InitFlag::PNG)?;
     let _mixer_context = sdl2::mixer::init(sdl2::mixer::InitFlag::MP3)?;
 
+
     // Audio
     sdl2::mixer::open_audio(44100, sdl2::mixer::AUDIO_S16LSB, 2, 1024)?;
     sdl2::mixer::allocate_channels(4);
@@ -47,23 +47,27 @@ fn main() -> Result<(), String> {
     let mut canvas = window.into_canvas().present_vsync().build().map_err(|e| e.to_string())?;
     let texture_creator = canvas.texture_creator();
 
-    //Sprite
+    // Sprite
     let mut sprite_renderer = SpriteRenderer::new();
 
-    // Carga texturas
+    // Cargar texturas de sprites
     let album_texture = texture_creator.load_texture("../assets/sprites/album.png")?;
     sprite_renderer.add_texture(album_texture);
 
     let hs_texture = texture_creator.load_texture("../assets/sprites/hs.png")?;
     sprite_renderer.add_texture(hs_texture);
 
-    // Ahora puedes agregar sprites con texture_index 0 y 1 respectivamente:
-    sprite_renderer.add_sprite(Sprite { x: 10.5, y: 1.5, texture_index: 0 }); // álbum
-    // hs.png (posición aleatoria en celda vacía)
+    // Agregar sprites
+    sprite_renderer.add_sprite(Sprite { x: 10.5, y: 1.5, texture_index: 0 });
+
+    //Pantallas
+    let inicio_image = texture_creator.load_texture("../assets/pages/inicio.png")?;
+    let instrucciones_image = texture_creator.load_texture("../assets/pages/instrucciones.png")?;
+    let victoria_image = texture_creator.load_texture("../assets/pages/victoria.png")?;
+
     loop {
         let x = rand::random::<f64>() * (maze::MAP_WIDTH as f64);
         let y = rand::random::<f64>() * (maze::MAP_HEIGHT as f64);
-
         if is_empty_cell(x, y) {
             sprite_renderer.add_sprite(Sprite { x, y, texture_index: 1 });
             break;
@@ -73,15 +77,8 @@ fn main() -> Result<(), String> {
     // Fuente
     let font = ttf_context.load_font("/System/Library/Fonts/Supplemental/Arial.ttf", 24)?;
 
-    // Cargar laberinto desde archivo
+    // Cargar laberinto
     load_maze_from_file("../maze.txt")?;
-
-    // Álbum sprite
-    let album_texture = texture_creator.load_texture("../assets/sprites/album.png")?;
-    let frame_width = 32;
-    let frame_height = 32;
-    let mut frame = 0;
-    let mut frame_timer = 0.0;
 
     // Texturas paredes
     let mut wall_textures = Vec::new();
@@ -103,7 +100,10 @@ fn main() -> Result<(), String> {
     let mut last_time = Instant::now();
     let mut victoria = false;
 
-    //FOV
+    // Estados de pantalla
+    let mut inicio = true;
+    let mut instrucciones = false;
+
     const FOV: f64 = std::f64::consts::PI / 3.0;
 
     'running: loop {
@@ -114,17 +114,46 @@ fn main() -> Result<(), String> {
         let plane_x = -player.dir_angle.sin() * (FOV / 2.0).tan();
         let plane_y = player.dir_angle.cos() * (FOV / 2.0).tan();
 
-
         // Eventos
         for event in event_pump.poll_iter() {
             match event {
-                Event::Quit { .. }
+                Event::Quit { .. } 
                 | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => break 'running,
+                Event::KeyDown { keycode: Some(Keycode::Return), .. } => {
+                    if inicio {
+                        inicio = false;
+                        instrucciones = true;
+                    } else if instrucciones {
+                        instrucciones = false; // iniciar juego
+                    } else if victoria {
+                        break 'running; // salir después de victoria
+                    }
+                },
                 _ => {}
             }
         }
 
-        // Movimiento
+        // --- Pantalla de inicio ---
+        if inicio {
+            canvas.set_draw_color(Color::RGB(0, 0, 0));
+            canvas.clear();
+            canvas.copy(&inicio_image, None, Some(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)))?;
+            canvas.present();
+            std::thread::sleep(Duration::from_millis(16));
+            continue;
+        }
+
+        // --- Pantalla de instrucciones ---
+        if instrucciones {
+            canvas.set_draw_color(Color::RGB(0, 0, 0));
+            canvas.clear();
+            canvas.copy(&instrucciones_image, None, Some(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)))?;
+            canvas.present();
+            std::thread::sleep(Duration::from_millis(16));
+            continue;
+        }
+
+        // --- Juego principal ---
         let keys: Vec<Keycode> = event_pump
             .keyboard_state()
             .pressed_scancodes()
@@ -132,7 +161,6 @@ fn main() -> Result<(), String> {
             .collect();
         player.update_position(&keys, delta_time);
 
-        // Rotación con el mouse
         let mouse_state = event_pump.relative_mouse_state();
         player.rotate(mouse_state.x());
 
@@ -145,27 +173,18 @@ fn main() -> Result<(), String> {
             }
         }
 
-        // Pantalla victoria
         if victoria {
             canvas.set_draw_color(Color::RGB(0, 0, 0));
             canvas.clear();
-            let surface = font.render("¡Has recuperado el álbum!")
-                .blended(Color::RGB(255, 255, 255)).unwrap();
-            let texture = texture_creator.create_texture_from_surface(&surface).unwrap();
-            canvas.copy(&texture, None, Rect::new(200, 250, 400, 50)).unwrap();
-            
+            canvas.copy(&victoria_image, None, Some(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)))?;
             canvas.present();
-            std::thread::sleep(Duration::from_secs(3));
-            break 'running;
+            std::thread::sleep(Duration::from_millis(16));
+            continue;
         }
 
-        // Fondo
+        // Render juego
         draw_background(&mut canvas, SCREEN_WIDTH, SCREEN_HEIGHT)?;
-
-        // Raycasting
         render_scene(&mut canvas, &player, &wall_textures, SCREEN_WIDTH, SCREEN_HEIGHT)?;
-
-        // Dibujar sprites
         sprite_renderer.draw_sprites(
             &mut canvas,
             player.x,
@@ -176,15 +195,9 @@ fn main() -> Result<(), String> {
             SCREEN_WIDTH,
             SCREEN_HEIGHT,
         )?;
-
-        // Minimapa
         draw_minimap(&mut canvas, &player, SCREEN_WIDTH)?;
-
-        // FPS
         let fps = (1.0 / delta_time) as i32;
         draw_fps(&mut canvas, &font, &texture_creator, fps)?;
-
-        // Presentar frame
         canvas.present();
         std::thread::sleep(Duration::from_millis(65));
     }
