@@ -186,7 +186,7 @@ fn main() -> Result<(), String> {
 
         // Presentar frame
         canvas.present();
-        std::thread::sleep(Duration::from_millis(16));
+        std::thread::sleep(Duration::from_millis(65));
     }
 
     Ok(())
