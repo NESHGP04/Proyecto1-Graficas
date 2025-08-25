@@ -7,7 +7,6 @@ mod sprite;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::image::LoadTexture;
-use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use std::time::{Duration, Instant};
 use sprite::{Sprite, SpriteRenderer, is_empty_cell};
@@ -28,7 +27,6 @@ fn main() -> Result<(), String> {
     let _image_context = sdl2::image::init(sdl2::image::InitFlag::PNG)?;
     let _mixer_context = sdl2::mixer::init(sdl2::mixer::InitFlag::MP3)?;
 
-
     // Audio
     sdl2::mixer::open_audio(44100, sdl2::mixer::AUDIO_S16LSB, 2, 1024)?;
     sdl2::mixer::allocate_channels(4);
@@ -47,38 +45,34 @@ fn main() -> Result<(), String> {
     let mut canvas = window.into_canvas().present_vsync().build().map_err(|e| e.to_string())?;
     let texture_creator = canvas.texture_creator();
 
-    // Sprite
+    // Sprite Renderer
     let mut sprite_renderer = SpriteRenderer::new();
-
-    // Cargar texturas de sprites
     let album_texture = texture_creator.load_texture("../assets/sprites/album.png")?;
     sprite_renderer.add_texture(album_texture);
-
     let hs_texture = texture_creator.load_texture("../assets/sprites/hs.png")?;
     sprite_renderer.add_texture(hs_texture);
 
-    // Agregar sprites
-    sprite_renderer.add_sprite(Sprite { x: 10.5, y: 1.5, texture_index: 0 });
-
-    //Pantallas
+    // Pantallas
     let inicio_image = texture_creator.load_texture("../assets/pages/inicio.png")?;
     let instrucciones_image = texture_creator.load_texture("../assets/pages/instrucciones.png")?;
     let victoria_image = texture_creator.load_texture("../assets/pages/victoria.png")?;
+    
+    // Pantallas de nivel
+    let level_images = vec![
+        None, // nivel 1 no tiene imagen porque usamos inicio/instrucciones
+        Some(texture_creator.load_texture("../assets/pages/level2.png")?),
+        Some(texture_creator.load_texture("../assets/pages/level3.png")?),
+    ];
 
-    loop {
-        let x = rand::random::<f64>() * (maze::MAP_WIDTH as f64);
-        let y = rand::random::<f64>() * (maze::MAP_HEIGHT as f64);
-        if is_empty_cell(x, y) {
-            sprite_renderer.add_sprite(Sprite { x, y, texture_index: 1 });
-            break;
-        }
-    }
+    // Niveles
+    let levels = vec![
+        "../maze/maze1.txt",
+        "../maze/maze2.txt",
+        "../maze/maze3.txt"
+    ];
 
     // Fuente
     let font = ttf_context.load_font("/System/Library/Fonts/Supplemental/Arial.ttf", 24)?;
-
-    // Cargar laberinto
-    load_maze_from_file("../maze.txt")?;
 
     // Texturas paredes
     let mut wall_textures = Vec::new();
@@ -93,114 +87,160 @@ fn main() -> Result<(), String> {
     mouse_util.set_relative_mouse_mode(true);
     mouse_util.show_cursor(false);
 
-    // Estado jugador
-    let mut player = Player::new();
-
-    let mut event_pump = sdl_context.event_pump()?;
-    let mut last_time = Instant::now();
-    let mut victoria = false;
-
-    // Estados de pantalla
-    let mut inicio = true;
-    let mut instrucciones = false;
-
     const FOV: f64 = std::f64::consts::PI / 3.0;
 
-    'running: loop {
-        let now = Instant::now();
-        let delta_time = now.duration_since(last_time).as_secs_f64();
-        last_time = now;
+    let mut event_pump = sdl_context.event_pump()?;
 
-        let plane_x = -player.dir_angle.sin() * (FOV / 2.0).tan();
-        let plane_y = player.dir_angle.cos() * (FOV / 2.0).tan();
+    // -----> Bucle de niveles <-----
+    for (i, level_path) in levels.iter().enumerate() {
+        println!("Cargando nivel {}", i + 1);
 
-        // Eventos
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. } 
-                | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => break 'running,
-                Event::KeyDown { keycode: Some(Keycode::Return), .. } => {
-                    if inicio {
-                        inicio = false;
-                        instrucciones = true;
-                    } else if instrucciones {
-                        instrucciones = false; // iniciar juego
-                    } else if victoria {
-                        break 'running; // salir después de victoria
+        // cargar maze
+        let _maze = load_maze_from_file(level_path)?;
+
+        // estado jugador nuevo en cada nivel
+        let mut player = Player::new();
+
+        // sprites aleatorios en el mapa
+        loop {
+            let x = rand::random::<f64>() * (maze::MAP_WIDTH as f64);
+            let y = rand::random::<f64>() * (maze::MAP_HEIGHT as f64);
+            if is_empty_cell(x, y) {
+                sprite_renderer.add_sprite(Sprite { x, y, texture_index: 1 });
+                break;
+            }
+        }
+
+        let mut last_time = Instant::now();
+        let mut victoria = false;
+        let mut inicio = i == 0; // solo en el primer nivel
+        let mut instrucciones = false;
+
+        // ------ Pantalla de "Nivel X" ------
+        if let Some(level_img) = &level_images[i] {
+            'level_screen: loop {
+                for event in event_pump.poll_iter() {
+                    match event {
+                        Event::Quit { .. } 
+                        | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => return Ok(()),
+                        Event::KeyDown { keycode: Some(Keycode::Return), .. } => {
+                            break 'level_screen;
+                        }
+                        _ => {}
                     }
-                },
-                _ => {}
+                }
+
+            canvas.copy(level_img, None, Some(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)))?;
+            canvas.present();
+            std::thread::sleep(Duration::from_millis(16));
             }
         }
 
-        // --- Pantalla de inicio ---
-        if inicio {
-            canvas.set_draw_color(Color::RGB(0, 0, 0));
-            canvas.clear();
-            canvas.copy(&inicio_image, None, Some(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)))?;
-            canvas.present();
-            std::thread::sleep(Duration::from_millis(16));
-            continue;
-        }
+        // ------ Bucle principal del nivel ------
+        'level_loop: loop {
+            let now = Instant::now();
+            let delta_time = now.duration_since(last_time).as_secs_f64();
+            last_time = now;
 
-        // --- Pantalla de instrucciones ---
-        if instrucciones {
-            canvas.set_draw_color(Color::RGB(0, 0, 0));
-            canvas.clear();
-            canvas.copy(&instrucciones_image, None, Some(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)))?;
-            canvas.present();
-            std::thread::sleep(Duration::from_millis(16));
-            continue;
-        }
+            let plane_x = -player.dir_angle.sin() * (FOV / 2.0).tan();
+            let plane_y = player.dir_angle.cos() * (FOV / 2.0).tan();
 
-        // --- Juego principal ---
-        let keys: Vec<Keycode> = event_pump
-            .keyboard_state()
-            .pressed_scancodes()
-            .filter_map(Keycode::from_scancode)
-            .collect();
-        player.update_position(&keys, delta_time);
-
-        let mouse_state = event_pump.relative_mouse_state();
-        player.rotate(mouse_state.x());
-
-        // Comprobar victoria
-        unsafe {
-            if maze::MAP[player.y as usize][player.x as usize] == 5 {
-                maze::MAP[player.y as usize][player.x as usize] = 0;
-                sdl2::mixer::Channel::all().play(&pickup_sound, 0)?;
-                victoria = true;
+            // Eventos
+            for event in event_pump.poll_iter() {
+                match event {
+                    Event::Quit { .. } 
+                    | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => return Ok(()),
+                    Event::KeyDown { keycode: Some(Keycode::Return), .. } => {
+                        if inicio {
+                            inicio = false;
+                            instrucciones = true;
+                        } else if instrucciones {
+                            instrucciones = false; // iniciar juego
+                        } else if victoria {
+                            break 'level_loop; // pasar al siguiente nivel
+                        }
+                    },
+                    _ => {}
+                }
             }
-        }
 
-        if victoria {
-            canvas.set_draw_color(Color::RGB(0, 0, 0));
-            canvas.clear();
-            canvas.copy(&victoria_image, None, Some(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)))?;
+            // Pantalla inicio
+            if inicio {
+                canvas.copy(&inicio_image, None, Some(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)))?;
+                canvas.present();
+                std::thread::sleep(Duration::from_millis(16));
+                continue;
+            }
+
+            // Pantalla instrucciones
+            if instrucciones {
+                canvas.copy(&instrucciones_image, None, Some(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)))?;
+                canvas.present();
+                std::thread::sleep(Duration::from_millis(16));
+                continue;
+            }
+
+            // Movimiento jugador
+            let keys: Vec<Keycode> = event_pump
+                .keyboard_state()
+                .pressed_scancodes()
+                .filter_map(Keycode::from_scancode)
+                .collect();
+            player.update_position(&keys, delta_time);
+
+            let mouse_state = event_pump.relative_mouse_state();
+            player.rotate(mouse_state.x());
+
+            // Comprobar meta (casilla 5 = salida)
+            let mut picked_album = false;
+            unsafe {
+                if maze::MAP[player.y as usize][player.x as usize] == 5 && !picked_album {
+                    // reproducir sonido
+                    sdl2::mixer::Channel::all().play(&pickup_sound, 0)?;
+
+                    // agregar sprite de album
+                    sprite_renderer.add_sprite(Sprite {
+                        x: player.x as f64 + 0.5,
+                        y: player.y as f64 + 0.5,
+                        texture_index: 0,
+                    });
+
+                    picked_album = true;
+                    victoria = true;
+                }
+            }
+
+            if victoria {
+                // Mostrar victoria solo si es el último nivel
+                if i == levels.len() - 1 {
+                    canvas.copy(&victoria_image, None, Some(Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)))?;
+                    canvas.present();
+                    std::thread::sleep(Duration::from_secs(2));
+                } else {
+                    // Sonido de victoria para niveles intermedios sin mostrar la pantalla
+                    sdl2::mixer::Channel::all().play(&pickup_sound, 0)?;
+                }
+                break 'level_loop;
+            }
+
+
+            // Render juego
+            draw_background(&mut canvas, SCREEN_WIDTH, SCREEN_HEIGHT)?;
+            render_scene(&mut canvas, &player, &wall_textures, SCREEN_WIDTH, SCREEN_HEIGHT)?;
+            sprite_renderer.draw_sprites(
+                &mut canvas,
+                player.x, player.y,
+                player.dir_angle, plane_x, plane_y,
+                SCREEN_WIDTH, SCREEN_HEIGHT,
+            )?;
+            draw_minimap(&mut canvas, &player, SCREEN_WIDTH)?;
+            let fps = (1.0 / delta_time) as i32;
+            draw_fps(&mut canvas, &font, &texture_creator, fps)?;
             canvas.present();
-            std::thread::sleep(Duration::from_millis(16));
-            continue;
+            std::thread::sleep(Duration::from_millis(65));
         }
-
-        // Render juego
-        draw_background(&mut canvas, SCREEN_WIDTH, SCREEN_HEIGHT)?;
-        render_scene(&mut canvas, &player, &wall_textures, SCREEN_WIDTH, SCREEN_HEIGHT)?;
-        sprite_renderer.draw_sprites(
-            &mut canvas,
-            player.x,
-            player.y,
-            player.dir_angle,
-            plane_x,
-            plane_y,
-            SCREEN_WIDTH,
-            SCREEN_HEIGHT,
-        )?;
-        draw_minimap(&mut canvas, &player, SCREEN_WIDTH)?;
-        let fps = (1.0 / delta_time) as i32;
-        draw_fps(&mut canvas, &font, &texture_creator, fps)?;
-        canvas.present();
-        std::thread::sleep(Duration::from_millis(65));
     }
 
+    println!("¡Has completado todos los niveles!");
     Ok(())
 }
