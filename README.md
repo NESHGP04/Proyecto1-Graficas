@@ -1,4 +1,4 @@
-# Proyecto1 - Taylor Swift Labyrinth
+# Proyecto 1 - Taylor Swift Labyrinth
 
 **Proyecto de juego de laberinto en Rust utilizando SDL2**
 
