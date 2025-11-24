@@ -46,7 +46,7 @@ fn main() -> Result<(), String> {
     let texture_creator = canvas.texture_creator();
 
     // Sprite Renderer
-    let mut sprite_renderer = SpriteRenderer::new();
+    let mut sprite_renderer: SpriteRenderer = SpriteRenderer::new();
     let album_texture = texture_creator.load_texture("../assets/sprites/album.png")?;
     sprite_renderer.add_texture(album_texture);
     let hs_texture = texture_creator.load_texture("../assets/sprites/hs.png")?;
