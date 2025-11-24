@@ -4,7 +4,6 @@
 /target/
 Cargo.lock
 **/*.rs.bk
-**/*.rs~
 **/*.d
 **/*.timestamp
 
@@ -48,7 +47,6 @@ Cargo.lock
 *.timestamp
 *.cmake
 *lib
-*.rs
 *Makefile
 *.yaml
 *.c
